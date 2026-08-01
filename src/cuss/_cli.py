@@ -11,16 +11,15 @@ import httpx
 
 from cuss._github import Filter, collect, connect, queries, since
 from cuss._pkg import Api, Qualname, read, resolve
-from cuss._usage import Blob, Stat, tally
+from cuss._usage import Blob, Kind, Stat, tally
 
-_KEYWORDS = 5
 _LABELS = {
-    "call": "call",
-    "subclass": "subcls",
-    "decorator": "decor",
-    "annotation": "annot",
-    "reference": "ref",
-    "import": "import",
+    Kind.CALL: "call",
+    Kind.SUBCLASS: "subcls",
+    Kind.DECORATOR: "decor",
+    Kind.ANNOTATION: "annot",
+    Kind.REFERENCE: "other",
+    Kind.IMPORT: "import",
 }
 
 
@@ -35,7 +34,6 @@ class Options:
     forks: bool
     exclude_archived: bool
     unused: bool
-    keywords: bool
     as_json: bool
     refresh: bool
     verbose: bool
@@ -59,7 +57,6 @@ def parse(argv: Sequence[str] | None) -> Options:
     add("--forks", action="store_true", help="include forks")
     add("--exclude-archived", action="store_true", help="skip archived repositories")
     add("--unused", action="store_true", help="list public symbols with no usage")
-    add("--keywords", action="store_true", help="show keyword arguments passed")
     add("--json", dest="as_json", action="store_true", help="emit JSON")
     add("--refresh", action="store_true", help="ignore cached results")
     add("-v", "--verbose", action="store_true", help="report progress on stderr")
@@ -75,7 +72,6 @@ def parse(argv: Sequence[str] | None) -> Options:
         forks=args.forks,
         exclude_archived=args.exclude_archived,
         unused=args.unused,
-        keywords=args.keywords,
         as_json=args.as_json,
         refresh=args.refresh,
         verbose=args.verbose,
@@ -143,15 +139,14 @@ def _render(options: Options, report: Report) -> Iterator[str]:
     yield ""
 
     shown = report.ranked[: options.top]
-    kinds = [k for k in _LABELS if any(k in stat.kinds for _, stat in shown)]
-    header = ("symbol", "refs", "files", "repos", *(_LABELS[k] for k in kinds))
-    align = "<>>>" + ">" * len(kinds)
-    if options.keywords:
-        header, align = (*header, "keywords"), align + "<"
-    rows = [header, *(_row(pair, report.scope, kinds, options) for pair in shown)]
-    yield from _table(rows, align) if shown else ("no usage found",)
+    kinds = [k for k in Kind if any(k in stat.kinds for _, stat in shown)]
+    header = ("symbol", "files", "repos", *(_LABELS[k] for k in kinds))
+    rows = [header, *(_row(name, stat, report.scope, kinds) for name, stat in shown)]
+    yield from _table(rows, "<>>" + ">" * len(kinds)) if shown else ("no usage found",)
 
     yield ""
+    if len(shown) < len(report.ranked):
+        yield f"{len(shown)} of {len(report.ranked)} used symbols shown (--top)"
     listing = "" if options.unused else " (--unused)"
     yield f"{len(report.unused)} public symbols unused{listing}"
     if options.unused:
@@ -159,23 +154,13 @@ def _render(options: Options, report: Report) -> Iterator[str]:
 
 
 def _row(
-    pair: tuple[Qualname, Stat],
-    scope: Qualname,
-    kinds: Sequence[str],
-    options: Options,
+    name: Qualname, stat: Stat, scope: Qualname, kinds: Sequence[Kind]
 ) -> tuple[str, ...]:
-    name, stat = pair
-    row = (
+    return (
         _relative(name, scope),
-        str(stat.refs),
         str(len(stat.files)),
         str(len(stat.repos)),
         *(str(stat.kinds[k]) if k in stat.kinds else "" for k in kinds),
-    )
-    return (
-        (*row, _counts(stat.keywords.most_common(_KEYWORDS)))
-        if options.keywords
-        else row
     )
 
 
@@ -186,10 +171,6 @@ def _relative(name: Qualname, scope: Qualname) -> str:
     ('gamma', 'a.b')
     """
     return name if name == scope else name.removeprefix(f"{scope}.")
-
-
-def _counts(items: Sequence[tuple[str, int]]) -> str:
-    return ", ".join(f"{name} {count}" for name, count in items)
 
 
 def _table(rows: Sequence[Sequence[str]], align: str) -> Iterator[str]:

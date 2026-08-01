@@ -16,25 +16,29 @@ Answers two questions:
 ## Usage
 
 ```shell
-cuss scipy.special --since 2y --min-stars 50 --keywords
+cuss scipy.special --since 2y --min-stars 50
 ```
 
 ```
 scipy.special — 400 files, 289 repos, pushed >= 2y
 
-symbol         refs  files  repos  call  ref  import  keywords
-softmax          77     43     41    72    3       2  axis 46
-erf              73     33     33    63    1       9
-gamma           136     32     30   130    3       3
-logsumexp        95     24     22    92            3  axis 49, keepdims 11, a 1, b 1
-comb             45     18     17    44            1  exact 6, repetition 2
+symbol         files  repos  call  other  import
+softmax           43     41    72      3       2
+erf               33     33    63      1       9
+gamma             32     30   130      3       3
+logsumexp         24     22    92              3
+comb              18     17    44              1
 
+20 of 125 used symbols shown (--top)
 549 public symbols unused (--unused)
 ```
 
 One column per usage kind, and only for the kinds that occur — `httpx` gets `subcls` and
-`annot` columns that `scipy.special` has no use for. Names are relative to the scope in
-the header line.
+`annot` columns that `scipy.special` has no use for. `other` is the catch-all: mentioned,
+but not called, subclassed, annotated or decorated (`--json` spells it `reference`).
+Names are relative to the scope named in the header.
+
+There is no total column, because it would be the row sum and nothing more.
 
 The target is a module, a symbol, a distribution, a directory, or a file:
 
@@ -123,9 +127,10 @@ flowchart TD
     parent -->|"otherwise"| reference["reference"]
 ```
 
-Ranking is by distinct repositories first, then raw references — one prolific codebase
-should not outvote the ecosystem. Keyword names are collected per call site, which is the
-most direct signal for which overloads and parameters need to be right.
+Ranking is by distinct repositories first, then total references — one prolific codebase
+should not outvote the ecosystem. Keyword names are collected per call site as well, the
+most direct signal for which overloads and parameters need to be right; they are reported
+by `--json` only, being too ragged for a column.
 
 ## Prior art: python-api-inspect
 
