@@ -22,27 +22,28 @@ cuss scipy.special --since 2y --min-stars 50
 ```
 scipy.special — 400 files, 289 repos, pushed >= 2y
 
-                         -- kinds --
-symbol     files  repos  call  value
-softmax       41     39    72      3
-gamma         29     27   130      3
-erf           26     26    63      1
-expit         19     20    33      2
-logsumexp     21     19    92
+repos  symbol     files  call  value
+   39  softmax       41    72      3
+   27  gamma         29   130      3
+   26  erf           26    63      1
+   20  expit         19    33      2
+   19  logsumexp     21    92
+   19  binom         19    54
 
 14 of 117 used symbols shown (--top)
 557 public symbols unused (--unused)
 ```
 
-One column per usage kind, and only for the kinds that occur. A package of functions needs
-two; `httpx`, whose API is largely classes and exceptions, needs five:
+Rows are ranked by distinct repositories, so that column leads. One column per usage kind
+follows, and only for the kinds that occur. A package of functions needs two; `httpx`,
+whose API is largely classes and exceptions, needs five:
 
 ```
-symbol           files  repos  call  subcls  annot  catch  value
-AsyncClient         54     50    66       2     28             5
-Response            21     20                   37             5
-Client              19     19    15       4     28             4
-HTTPError           16     16                    1     26      6
+repos  symbol           files  call  subcls  annot  catch  value
+   50  AsyncClient         54    66       2     28             5
+   20  Response            21                   37             5
+   19  Client              19    15       4     28             4
+   16  HTTPError           16                    1     26      6
 ```
 
 `value` comes last and is the residue — the symbol named as a value, so passed to a
