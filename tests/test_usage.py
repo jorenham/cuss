@@ -37,7 +37,7 @@ def test_binding_forms_resolve(source: str, expected: str) -> None:
         ("from scipy.stats import norm\ndef f(x: norm): ...", Kind.ANNOTATION),
         ("from scipy.stats import norm\ndef f() -> norm: ...", Kind.ANNOTATION),
         ("from scipy.stats import norm\nx: list[norm] = []", Kind.ANNOTATION),
-        ("from scipy.stats import norm\nf(norm)", Kind.REFERENCE),
+        ("from scipy.stats import norm\nf(norm)", Kind.VALUE),
     ],
 )
 def test_usage_kinds(source: str, expected: Kind) -> None:
@@ -113,3 +113,15 @@ def test_a_parameter_elsewhere_does_not_hide_real_usage() -> None:
 def test_corpus_warnings_do_not_leak() -> None:
     source = "from scipy.stats import norm\nnorm('\\d+')\n"
     assert kinds(source) == {"scipy.stats.norm": Kind.CALL.value}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from scipy.stats import norm\ntry:\n    f()\nexcept norm:\n    pass\n",
+        "from scipy.stats import norm\ntry:\n    f()\nexcept (norm, E):\n    pass\n",
+        "from scipy.stats import norm\ntry:\n    f()\nexcept norm as e:\n    pass\n",
+    ],
+)
+def test_caught_exceptions_are_their_own_kind(source: str) -> None:
+    assert kinds(source) == {"scipy.stats.norm": Kind.CATCH.value}

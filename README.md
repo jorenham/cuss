@@ -23,7 +23,7 @@ cuss scipy.special --since 2y --min-stars 50
 scipy.special — 400 files, 289 repos, pushed >= 2y
 
                          -- kinds --
-symbol     files  repos  call  other
+symbol     files  repos  call  value
 softmax       41     39    72      3
 gamma         29     27   130      3
 erf           26     26    63      1
@@ -34,10 +34,20 @@ logsumexp     21     19    92
 557 public symbols unused (--unused)
 ```
 
-One column per usage kind, and only for the kinds that occur — `httpx` gets `subcls` and
-`annot` columns that `scipy.special` has no use for. `other` comes last, being the
-catch-all: mentioned, but not called, subclassed, annotated or decorated (`--json` spells
-it `reference`). Names are relative to the scope named in the header.
+One column per usage kind, and only for the kinds that occur. A package of functions needs
+two; `httpx`, whose API is largely classes and exceptions, needs five:
+
+```
+symbol           files  repos  call  subcls  annot  catch  value
+AsyncClient         54     50    66       2     28             5
+Response            21     20                   37             5
+Client              19     19    15       4     28             4
+HTTPError           16     16                    1     26      6
+```
+
+`value` comes last and is the residue — the symbol named as a value, so passed to a
+function, aliased, put in a tuple, or used in arithmetic. Names are relative to the scope
+named in the header.
 
 Importing a name is not using it. A file that imports `gamma` and never mentions it again
 contributes nothing, so a symbol nobody does more than import counts as unused.
@@ -127,7 +137,8 @@ flowchart TD
     parent -->|"ClassDef.bases"| subclass["subclass"]
     parent -->|"decorator_list"| decorator["decorator"]
     parent -->|"annotation · returns"| annotation["annotation"]
-    parent -->|"otherwise"| reference["reference"]
+    parent -->|"except clause"| catch["catch"]
+    parent -->|"otherwise"| value["value"]
 ```
 
 Ranking is by distinct repositories first, then total references — one prolific codebase

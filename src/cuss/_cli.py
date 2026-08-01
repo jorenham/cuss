@@ -20,7 +20,8 @@ _LABELS = {
     Kind.SUBCLASS: "subcls",
     Kind.DECORATOR: "decor",
     Kind.ANNOTATION: "annot",
-    Kind.REFERENCE: "other",
+    Kind.CATCH: "catch",
+    Kind.VALUE: "value",
 }
 
 

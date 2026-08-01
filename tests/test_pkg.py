@@ -151,4 +151,4 @@ def test_every_kind_has_a_column_label() -> None:
 
 
 def test_the_catch_all_kind_is_last() -> None:
-    assert list(_LABELS)[-1] is Kind.REFERENCE
+    assert list(_LABELS)[-1] is Kind.VALUE
