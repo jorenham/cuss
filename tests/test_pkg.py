@@ -116,3 +116,29 @@ def test_retry_after_falls_back_to_the_reset_timestamp() -> None:
 def test_retry_after_is_capped() -> None:
     far = str(int(time.time()) + 10_000)
     assert _retry_after(throttled(**{"x-ratelimit-reset": far})) <= MAX_PAUSE
+
+
+def test_climb_rises_from_a_subpackage_to_the_top_level(stubs: Path) -> None:
+    assert resolve(str(stubs / "special")) == (stubs, "toy.special")
+
+
+def test_climb_rises_from_a_module_file(stubs: Path) -> None:
+    assert resolve(str(stubs / "special" / "_basic.pyi")) == (
+        stubs,
+        "toy.special._basic",
+    )
+
+
+def test_climb_treats_dunder_init_as_its_package(stubs: Path) -> None:
+    assert resolve(str(stubs / "special" / "__init__.pyi")) == (stubs, "toy.special")
+
+
+def test_climb_stops_at_the_top_level_package(stubs: Path) -> None:
+    assert resolve(str(stubs)) == (stubs, "toy")
+
+
+def test_climb_rejects_a_non_python_file(stubs: Path) -> None:
+    other = stubs.parent / "notes.txt"
+    _ = other.write_text("hi", encoding="utf-8")
+    with pytest.raises(LookupError, match="not a Python file"):
+        _ = resolve(str(other))

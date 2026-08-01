@@ -96,16 +96,55 @@ class Api:
 
 def resolve(target: str) -> tuple[Path, Qualname]:
     """Locate the package directory for *target* and the dotted scope it asks about."""
-    if target.startswith(".") or "/" in target or "\\" in target:
-        base = Path(target).resolve()
-        if not base.is_dir():
-            msg = f"{target!r} is not a directory"
-            raise LookupError(msg)
-        return base, _unstub(base.name)
+    if _looks_like_path(target):
+        return climb(Path(target).expanduser().resolve())
 
     head, _, rest = target.partition(".")
     root = _unstub(head)
     return _locate(root), f"{root}.{rest}" if rest else root
+
+
+def _looks_like_path(target: str) -> bool:
+    """Whether *target* names a file or directory rather than a dotted module.
+
+    >>> _looks_like_path("./src"), _looks_like_path("a/b.pyi"), _looks_like_path("f.py")
+    (True, True, True)
+    >>> _looks_like_path("scipy.special"), _looks_like_path("scipy-stubs")
+    (False, False)
+    """
+    return (
+        target.startswith((".", "/", "~"))
+        or target.endswith(_SUFFIXES)
+        or "/" in target
+        or "\\" in target
+    )
+
+
+def climb(path: Path) -> tuple[Path, Qualname]:
+    """Rise from a file or subpackage to its top level, keeping the scope it names.
+
+    A parent holding ``__init__`` means *path* is still inside a package, which
+    is what Python itself goes by; ``pyproject.toml`` would mark the project
+    instead, and that sits above ``src/`` rather than at the package.
+    """
+    if not path.exists():
+        msg = f"{str(path)!r} does not exist"
+        raise LookupError(msg)
+    if not path.is_dir() and path.suffix not in _SUFFIXES:
+        msg = f"{str(path)!r} is not a Python file or a directory"
+        raise LookupError(msg)
+
+    base = path if path.is_dir() else path.parent
+    named = not path.is_dir() and path.stem != "__init__"
+    parts = [path.stem] if named else []
+    while base.parent != base and _is_package(base.parent):
+        parts.insert(0, base.name)
+        base = base.parent
+    return base, ".".join((_unstub(base.name), *parts))
+
+
+def _is_package(path: Path) -> bool:
+    return any((path / f"__init__{suffix}").is_file() for suffix in _SUFFIXES)
 
 
 def _unstub(name: str) -> str:
