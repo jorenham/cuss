@@ -13,8 +13,15 @@ from cuss._github import Filter, collect, connect, queries, since
 from cuss._pkg import Api, Qualname, read, resolve
 from cuss._usage import Blob, Stat, tally
 
-_KINDS = 3
 _KEYWORDS = 5
+_LABELS = {
+    "call": "call",
+    "subclass": "subcls",
+    "decorator": "decor",
+    "annotation": "annot",
+    "reference": "ref",
+    "import": "import",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,36 +142,50 @@ def _render(options: Options, report: Report) -> Iterator[str]:
     yield f"{report.scope} — {report.files} files, {report.repos} repos{filters}"
     yield ""
 
-    header = ("symbol", "refs", "files", "repos", "kinds")
-    align = "<>>><"
+    shown = report.ranked[: options.top]
+    kinds = [k for k in _LABELS if any(k in stat.kinds for _, stat in shown)]
+    header = ("symbol", "refs", "files", "repos", *(_LABELS[k] for k in kinds))
+    align = "<>>>" + ">" * len(kinds)
     if options.keywords:
         header, align = (*header, "keywords"), align + "<"
-    rows = [
-        header,
-        *(_row(name, stat, options) for name, stat in report.ranked[: options.top]),
-    ]
-    yield from _table(rows, align) if report.ranked else ("no usage found",)
+    rows = [header, *(_row(pair, report.scope, kinds, options) for pair in shown)]
+    yield from _table(rows, align) if shown else ("no usage found",)
 
     yield ""
     listing = "" if options.unused else " (--unused)"
     yield f"{len(report.unused)} public symbols unused{listing}"
     if options.unused:
-        yield from (f"  {name}" for name in report.unused)
+        yield from (f"  {_relative(name, report.scope)}" for name in report.unused)
 
 
-def _row(name: Qualname, stat: Stat, options: Options) -> tuple[str, ...]:
+def _row(
+    pair: tuple[Qualname, Stat],
+    scope: Qualname,
+    kinds: Sequence[str],
+    options: Options,
+) -> tuple[str, ...]:
+    name, stat = pair
     row = (
-        name,
+        _relative(name, scope),
         str(stat.refs),
         str(len(stat.files)),
         str(len(stat.repos)),
-        _counts(stat.kinds.most_common(_KINDS)),
+        *(str(stat.kinds[k]) if k in stat.kinds else "" for k in kinds),
     )
     return (
         (*row, _counts(stat.keywords.most_common(_KEYWORDS)))
         if options.keywords
         else row
     )
+
+
+def _relative(name: Qualname, scope: Qualname) -> str:
+    """Drop the scope the header already states, keeping the scope itself whole.
+
+    >>> _relative("scipy.special.gamma", "scipy.special"), _relative("a.b", "a.b")
+    ('gamma', 'a.b')
+    """
+    return name if name == scope else name.removeprefix(f"{scope}.")
 
 
 def _counts(items: Sequence[tuple[str, int]]) -> str:
