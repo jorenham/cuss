@@ -30,14 +30,19 @@ httpx.Client             51     19     19  annotation 28, call 15, subclass 4   
 37 public symbols unused (--unused)
 ```
 
-The target is a module, a symbol, a distribution, or a directory:
+The target is a module, a symbol, a distribution, a directory, or a file:
 
 ```shell
-cuss scipy.special           # rank one module
-cuss scipy.special.gamma     # one symbol
-cuss scipy-stubs --unused    # deprecation candidates across the package
-cuss ./src/mypkg             # a checkout
+cuss scipy.special             # rank one module
+cuss scipy.special.gamma       # one symbol
+cuss scipy-stubs --unused      # deprecation candidates across the package
+cuss ./scipy-stubs/special     # a working tree, scoped to a submodule
+cuss ./src/mypkg/_core.py      # whichever file is open
 ```
+
+Dotted targets are resolved from `sys.path`. Paths climb to the top-level package —
+a parent holding `__init__` means there is more package above — so pointing anywhere
+inside a checkout works, and the position within it becomes the scope.
 
 Needs `GITHUB_TOKEN`, `GH_TOKEN`, or an authenticated `gh`.
 
