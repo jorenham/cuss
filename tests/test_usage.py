@@ -111,3 +111,8 @@ def test_locally_bound_names_are_not_attributed(source: str) -> None:
 def test_a_parameter_elsewhere_does_not_hide_real_usage() -> None:
     source = "from scipy.stats import norm\ndef f(x):\n    return norm(x)\n"
     assert kinds(source) == {"scipy.stats.norm": Kind.CALL.value}
+
+
+def test_corpus_warnings_do_not_leak() -> None:
+    source = "from scipy.stats import norm\nnorm('\\d+')\n"
+    assert kinds(source) == {"scipy.stats.norm": Kind.CALL.value}

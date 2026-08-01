@@ -1,4 +1,5 @@
 import ast
+import warnings
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Set as AbstractSet
 from dataclasses import dataclass, field
@@ -107,7 +108,9 @@ def usages(
     >>> [r.kind.value for r in usages("import scipy.special\\n", "scipy", api)]
     ['import']
     """
-    tree = ast.parse(source)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        tree = ast.parse(source)
     shadowed = _shadowed(tree)
     binds = {k: v for k, v in bindings(tree, root, api).items() if k not in shadowed}
     known = frozenset(api) | {f"{m}.{s}" for m, names in api.items() for s in names}
