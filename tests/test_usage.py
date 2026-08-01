@@ -37,18 +37,16 @@ def test_binding_forms_resolve(source: str, expected: str) -> None:
         ("from scipy.stats import norm\ndef f(x: norm): ...", Kind.ANNOTATION),
         ("from scipy.stats import norm\ndef f() -> norm: ...", Kind.ANNOTATION),
         ("from scipy.stats import norm\nx: list[norm] = []", Kind.ANNOTATION),
-        ("from scipy.stats import norm\nf(norm)", Kind.REFERENCE),
-        ("from scipy.stats import norm", Kind.IMPORT),
+        ("from scipy.stats import norm\nf(norm)", Kind.VALUE),
     ],
 )
 def test_usage_kinds(source: str, expected: Kind) -> None:
     assert kinds(source) == {"scipy.stats.norm": expected.value}
 
 
-def test_import_is_not_reported_when_the_name_is_used() -> None:
-    assert Kind.IMPORT.value not in kinds(
-        "import scipy.special\nscipy.special.gamma(1)"
-    )
+def test_a_bare_import_is_not_a_use() -> None:
+    assert kinds("from scipy.stats import norm") == {}
+    assert kinds("import scipy.special") == {}
 
 
 def test_attribute_chains_trim_to_known_symbols() -> None:
@@ -61,9 +59,7 @@ def test_unrelated_imports_are_ignored() -> None:
 
 
 def test_stores_are_not_counted() -> None:
-    assert kinds("from scipy.special import gamma\ngamma = 1") == {
-        "scipy.special.gamma": Kind.IMPORT.value
-    }
+    assert kinds("from scipy.special import gamma\ngamma = 1") == {}
 
 
 def test_keywords_are_collected_per_call() -> None:
@@ -82,8 +78,9 @@ def test_tally_counts_files_and_repos_once_per_reference() -> None:
 
 
 def test_tally_skips_files_that_do_not_parse() -> None:
-    blobs = [Blob("a", "sha1", "def ("), Blob("b", "sha2", "import scipy.stats")]
-    assert set(tally(blobs, "scipy", API)) == {"scipy.stats"}
+    good = "import scipy.stats\nscipy.stats.norm(1)"
+    blobs = [Blob("a", "sha1", "def ("), Blob("b", "sha2", good)]
+    assert set(tally(blobs, "scipy", API)) == {"scipy.stats.norm"}
 
 
 def test_locally_defined_names_shadow_star_imports() -> None:
@@ -93,7 +90,7 @@ def test_locally_defined_names_shadow_star_imports() -> None:
 
 def test_locally_defined_names_shadow_explicit_imports() -> None:
     source = "from scipy.special import gamma\ndef gamma(): ...\ngamma(1)"
-    assert kinds(source) == {"scipy.special.gamma": Kind.IMPORT.value}
+    assert kinds(source) == {}
 
 
 @pytest.mark.parametrize(
@@ -105,7 +102,7 @@ def test_locally_defined_names_shadow_explicit_imports() -> None:
     ],
 )
 def test_locally_bound_names_are_not_attributed(source: str) -> None:
-    assert kinds(source) == {"scipy.stats.norm": Kind.IMPORT.value}
+    assert kinds(source) == {}
 
 
 def test_a_parameter_elsewhere_does_not_hide_real_usage() -> None:
@@ -116,3 +113,15 @@ def test_a_parameter_elsewhere_does_not_hide_real_usage() -> None:
 def test_corpus_warnings_do_not_leak() -> None:
     source = "from scipy.stats import norm\nnorm('\\d+')\n"
     assert kinds(source) == {"scipy.stats.norm": Kind.CALL.value}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from scipy.stats import norm\ntry:\n    f()\nexcept norm:\n    pass\n",
+        "from scipy.stats import norm\ntry:\n    f()\nexcept (norm, E):\n    pass\n",
+        "from scipy.stats import norm\ntry:\n    f()\nexcept norm as e:\n    pass\n",
+    ],
+)
+def test_caught_exceptions_are_their_own_kind(source: str) -> None:
+    assert kinds(source) == {"scipy.stats.norm": Kind.CATCH.value}

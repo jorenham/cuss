@@ -11,10 +11,18 @@ import httpx
 
 from cuss._github import Filter, collect, connect, queries, since
 from cuss._pkg import Api, Qualname, read, resolve
-from cuss._usage import Blob, Stat, tally
+from cuss._usage import Blob, Kind, Stat, tally
 
-_KINDS = 3
-_KEYWORDS = 5
+_SPREAD = 3
+_NOTHING = ("no usage found",)
+_LABELS = {
+    Kind.CALL: "call",
+    Kind.SUBCLASS: "subcls",
+    Kind.DECORATOR: "decor",
+    Kind.ANNOTATION: "annot",
+    Kind.CATCH: "catch",
+    Kind.VALUE: "value",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +36,6 @@ class Options:
     forks: bool
     exclude_archived: bool
     unused: bool
-    keywords: bool
     as_json: bool
     refresh: bool
     verbose: bool
@@ -52,7 +59,6 @@ def parse(argv: Sequence[str] | None) -> Options:
     add("--forks", action="store_true", help="include forks")
     add("--exclude-archived", action="store_true", help="skip archived repositories")
     add("--unused", action="store_true", help="list public symbols with no usage")
-    add("--keywords", action="store_true", help="show keyword arguments passed")
     add("--json", dest="as_json", action="store_true", help="emit JSON")
     add("--refresh", action="store_true", help="ignore cached results")
     add("-v", "--verbose", action="store_true", help="report progress on stderr")
@@ -68,7 +74,6 @@ def parse(argv: Sequence[str] | None) -> Options:
         forks=args.forks,
         exclude_archived=args.exclude_archived,
         unused=args.unused,
-        keywords=args.keywords,
         as_json=args.as_json,
         refresh=args.refresh,
         verbose=args.verbose,
@@ -135,49 +140,65 @@ def _render(options: Options, report: Report) -> Iterator[str]:
     yield f"{report.scope} — {report.files} files, {report.repos} repos{filters}"
     yield ""
 
-    header = ("symbol", "refs", "files", "repos", "kinds")
-    align = "<>>><"
-    if options.keywords:
-        header, align = (*header, "keywords"), align + "<"
-    rows = [
-        header,
-        *(_row(name, stat, options) for name, stat in report.ranked[: options.top]),
-    ]
-    yield from _table(rows, align) if report.ranked else ("no usage found",)
+    shown = report.ranked[: options.top]
+    kinds = [k for k in _LABELS if any(k in stat.kinds for _, stat in shown)]
+    header = ("symbol", "files", "repos", *(_LABELS[k] for k in kinds))
+    rows = [header, *(_row(name, stat, report.scope, kinds) for name, stat in shown)]
+    group = "kinds" if kinds else None
+    yield from _table(rows, "<>>" + ">" * len(kinds), group) if shown else _NOTHING
 
     yield ""
+    if len(shown) < len(report.ranked):
+        yield f"{len(shown)} of {len(report.ranked)} used symbols shown (--top)"
     listing = "" if options.unused else " (--unused)"
     yield f"{len(report.unused)} public symbols unused{listing}"
     if options.unused:
-        yield from (f"  {name}" for name in report.unused)
+        yield from (f"  {_relative(name, report.scope)}" for name in report.unused)
 
 
-def _row(name: Qualname, stat: Stat, options: Options) -> tuple[str, ...]:
-    row = (
-        name,
-        str(stat.refs),
+def _row(
+    name: Qualname, stat: Stat, scope: Qualname, kinds: Sequence[Kind]
+) -> tuple[str, ...]:
+    return (
+        _relative(name, scope),
         str(len(stat.files)),
         str(len(stat.repos)),
-        _counts(stat.kinds.most_common(_KINDS)),
-    )
-    return (
-        (*row, _counts(stat.keywords.most_common(_KEYWORDS)))
-        if options.keywords
-        else row
+        *(str(stat.kinds[k]) if k in stat.kinds else "" for k in kinds),
     )
 
 
-def _counts(items: Sequence[tuple[str, int]]) -> str:
-    return ", ".join(f"{name} {count}" for name, count in items)
+def _relative(name: Qualname, scope: Qualname) -> str:
+    """Drop the scope the header already states, keeping the scope itself whole.
+
+    >>> _relative("scipy.special.gamma", "scipy.special"), _relative("a.b", "a.b")
+    ('gamma', 'a.b')
+    """
+    return name if name == scope else name.removeprefix(f"{scope}.")
 
 
-def _table(rows: Sequence[Sequence[str]], align: str) -> Iterator[str]:
+def _table(
+    rows: Sequence[Sequence[str]], align: str, group: str | None = None
+) -> Iterator[str]:
     widths = [max(len(row[column]) for row in rows) for column in range(len(align))]
+    if group is not None:
+        yield _span(widths, group)
     for row in rows:
         cells = zip(row, align, widths, strict=True)
         yield "  ".join(
             c.rjust(w) if a == ">" else c.ljust(w) for c, a, w in cells
         ).rstrip()
+
+
+def _span(widths: Sequence[int], label: str) -> str:
+    """A rule naming the trailing columns as one group.
+
+    >>> _span([6, 5, 5, 4, 6], "kinds")
+    '                      -- kinds ---'
+    """
+    gap = 2
+    lead = sum(widths[:_SPREAD]) + gap * _SPREAD
+    over = sum(widths[_SPREAD:]) + gap * (len(widths) - _SPREAD - 1)
+    return " " * lead + f" {label} ".center(over, "-")
 
 
 def _payload(report: Report) -> dict[str, object]:

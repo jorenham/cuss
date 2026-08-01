@@ -13,8 +13,8 @@ class Kind(StrEnum):
     SUBCLASS = "subclass"
     DECORATOR = "decorator"
     ANNOTATION = "annotation"
-    REFERENCE = "reference"
-    IMPORT = "import"
+    CATCH = "catch"
+    VALUE = "value"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,21 +79,6 @@ def bindings(
     return found
 
 
-def imports(tree: ast.AST, root: str) -> list[Qualname]:
-    """Qualified names brought into scope by import statements.
-
-    >>> imports(ast.parse("import scipy.special\\nfrom scipy import stats"), "scipy")
-    ['scipy.special', 'scipy.stats']
-    """
-    found: list[Qualname] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            found += [a.name for a in node.names if _under(a.name, root)]
-        elif isinstance(node, ast.ImportFrom) and (module := _source(node, root)):
-            found += [f"{module}.{a.name}" for a in node.names if a.name != "*"]
-    return found
-
-
 def usages(
     source: str,
     root: str,
@@ -105,8 +90,8 @@ def usages(
     >>> src = "from scipy.special import gamma as g\\ng(1, out=None)\\n"
     >>> [(r.name, r.kind.value, r.keywords) for r in usages(src, "scipy", api)]
     [('scipy.special.gamma', 'call', ('out',))]
-    >>> [r.kind.value for r in usages("import scipy.special\\n", "scipy", api)]
-    ['import']
+    >>> [*usages("from scipy.special import gamma\\n", "scipy", api)]
+    []
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", SyntaxWarning)
@@ -115,7 +100,6 @@ def usages(
     binds = {k: v for k, v in bindings(tree, root, api).items() if k not in shadowed}
     known = frozenset(api) | {f"{m}.{s}" for m, names in api.items() for s in names}
     context = _classify(tree)
-    seen: set[Qualname] = set()
 
     for node in _references(tree, context):
         dotted = _dotted(node)
@@ -124,13 +108,8 @@ def usages(
             continue
         if (name := _trim(f"{target}.{tail}" if tail else target, known)) is None:
             continue
-        seen.add(name)
-        kind = context.kinds.get(id(node), Kind.REFERENCE)
+        kind = context.kinds.get(id(node), Kind.VALUE)
         yield Ref(name, kind, context.keywords.get(id(node), ()))
-
-    for name in imports(tree, root):
-        if not any(s == name or s.startswith(f"{name}.") for s in seen):
-            yield Ref(name, Kind.IMPORT)
 
 
 def tally(
@@ -173,6 +152,8 @@ def _classify(tree: ast.AST) -> _Context:
             )
         if isinstance(node, ast.ClassDef):
             _mark(context.kinds, node.bases, Kind.SUBCLASS)
+        if isinstance(node, ast.ExceptHandler) and node.type is not None:
+            _mark(context.kinds, _caught(node.type), Kind.CATCH)
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             _mark(context.kinds, node.decorator_list, Kind.DECORATOR)
         for annotation in _annotations(node):
@@ -233,6 +214,11 @@ def _shadowed(tree: ast.AST) -> set[str]:
             case _:
                 continue
     return names
+
+
+def _caught(node: ast.expr) -> tuple[ast.expr, ...]:
+    """The exception types an `except` clause names, one clause or a tuple of them."""
+    return tuple(node.elts) if isinstance(node, ast.Tuple) else (node,)
 
 
 def _mark(kinds: dict[int, Kind], nodes: Iterable[ast.expr], kind: Kind) -> None:

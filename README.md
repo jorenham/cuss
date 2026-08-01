@@ -16,19 +16,43 @@ Answers two questions:
 ## Usage
 
 ```shell
-cuss httpx --since 2024-01-01 --min-stars 50 --keywords
+cuss scipy.special --since 2y --min-stars 50
 ```
 
 ```
-httpx — 120 files, 106 repos, pushed >= 2024-01-01
+scipy.special — 400 files, 289 repos, pushed >= 2y
 
-symbol                 refs  files  repos  kinds                                keywords
-httpx.AsyncClient       101     54     50  call 66, annotation 28, reference 5  timeout 47, headers 17, follow_redirects 11
-httpx.Response           42     21     20  annotation 37, reference 5
-httpx.Client             51     19     19  annotation 28, call 15, subclass 4   headers 6, timeout 6, base_url 2
+                         -- kinds --
+symbol     files  repos  call  value
+softmax       41     39    72      3
+gamma         29     27   130      3
+erf           26     26    63      1
+expit         19     20    33      2
+logsumexp     21     19    92
 
-37 public symbols unused (--unused)
+14 of 117 used symbols shown (--top)
+557 public symbols unused (--unused)
 ```
+
+One column per usage kind, and only for the kinds that occur. A package of functions needs
+two; `httpx`, whose API is largely classes and exceptions, needs five:
+
+```
+symbol           files  repos  call  subcls  annot  catch  value
+AsyncClient         54     50    66       2     28             5
+Response            21     20                   37             5
+Client              19     19    15       4     28             4
+HTTPError           16     16                    1     26      6
+```
+
+`value` comes last and is the residue — the symbol named as a value, so passed to a
+function, aliased, put in a tuple, or used in arithmetic. Names are relative to the scope
+named in the header.
+
+Importing a name is not using it. A file that imports `gamma` and never mentions it again
+contributes nothing, so a symbol nobody does more than import counts as unused.
+
+There is no total column, because it would be the row sum and nothing more.
 
 The target is a module, a symbol, a distribution, a directory, or a file:
 
@@ -113,13 +137,14 @@ flowchart TD
     parent -->|"ClassDef.bases"| subclass["subclass"]
     parent -->|"decorator_list"| decorator["decorator"]
     parent -->|"annotation · returns"| annotation["annotation"]
-    parent -->|"never referenced"| imported["import"]
-    parent -->|"otherwise"| reference["reference"]
+    parent -->|"except clause"| catch["catch"]
+    parent -->|"otherwise"| value["value"]
 ```
 
-Ranking is by distinct repositories first, then raw references — one prolific codebase
-should not outvote the ecosystem. Keyword names are collected per call site, which is the
-most direct signal for which overloads and parameters need to be right.
+Ranking is by distinct repositories first, then total references — one prolific codebase
+should not outvote the ecosystem. Keyword names are collected per call site as well, the
+most direct signal for which overloads and parameters need to be right; they are reported
+by `--json` only, being too ragged for a column.
 
 ## Prior art: python-api-inspect
 
