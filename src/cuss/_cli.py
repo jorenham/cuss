@@ -13,13 +13,15 @@ from cuss._github import Filter, collect, connect, queries, since
 from cuss._pkg import Api, Qualname, read, resolve
 from cuss._usage import Blob, Kind, Stat, tally
 
+_SPREAD = 3
+_NOTHING = ("no usage found",)
 _LABELS = {
     Kind.CALL: "call",
     Kind.SUBCLASS: "subcls",
     Kind.DECORATOR: "decor",
     Kind.ANNOTATION: "annot",
-    Kind.REFERENCE: "other",
     Kind.IMPORT: "import",
+    Kind.REFERENCE: "other",
 }
 
 
@@ -139,10 +141,11 @@ def _render(options: Options, report: Report) -> Iterator[str]:
     yield ""
 
     shown = report.ranked[: options.top]
-    kinds = [k for k in Kind if any(k in stat.kinds for _, stat in shown)]
+    kinds = [k for k in _LABELS if any(k in stat.kinds for _, stat in shown)]
     header = ("symbol", "files", "repos", *(_LABELS[k] for k in kinds))
     rows = [header, *(_row(name, stat, report.scope, kinds) for name, stat in shown)]
-    yield from _table(rows, "<>>" + ">" * len(kinds)) if shown else ("no usage found",)
+    group = "kinds" if kinds else None
+    yield from _table(rows, "<>>" + ">" * len(kinds), group) if shown else _NOTHING
 
     yield ""
     if len(shown) < len(report.ranked):
@@ -173,13 +176,29 @@ def _relative(name: Qualname, scope: Qualname) -> str:
     return name if name == scope else name.removeprefix(f"{scope}.")
 
 
-def _table(rows: Sequence[Sequence[str]], align: str) -> Iterator[str]:
+def _table(
+    rows: Sequence[Sequence[str]], align: str, group: str | None = None
+) -> Iterator[str]:
     widths = [max(len(row[column]) for row in rows) for column in range(len(align))]
+    if group is not None:
+        yield _span(widths, group)
     for row in rows:
         cells = zip(row, align, widths, strict=True)
         yield "  ".join(
             c.rjust(w) if a == ">" else c.ljust(w) for c, a, w in cells
         ).rstrip()
+
+
+def _span(widths: Sequence[int], label: str) -> str:
+    """A rule naming the trailing columns as one group.
+
+    >>> _span([6, 5, 5, 4, 6], "kinds")
+    '                      -- kinds ---'
+    """
+    gap = 2
+    lead = sum(widths[:_SPREAD]) + gap * _SPREAD
+    over = sum(widths[_SPREAD:]) + gap * (len(widths) - _SPREAD - 1)
+    return " " * lead + f" {label} ".center(over, "-")
 
 
 def _payload(report: Report) -> dict[str, object]:

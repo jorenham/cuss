@@ -5,8 +5,10 @@ from pathlib import Path
 import httpx
 import pytest
 
+from cuss._cli import _LABELS
 from cuss._github import Filter, Repo, _retry_after, since
 from cuss._pkg import read, resolve, symbols
+from cuss._usage import Kind
 
 SEVEN = 7.0
 THIRTY = 30.0
@@ -142,3 +144,11 @@ def test_climb_rejects_a_non_python_file(stubs: Path) -> None:
     _ = other.write_text("hi", encoding="utf-8")
     with pytest.raises(LookupError, match="not a Python file"):
         _ = resolve(str(other))
+
+
+def test_every_kind_has_a_column_label() -> None:
+    assert set(_LABELS) == set(Kind)
+
+
+def test_the_catch_all_kind_is_last() -> None:
+    assert list(_LABELS)[-1] is Kind.REFERENCE

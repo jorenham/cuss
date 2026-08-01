@@ -22,21 +22,22 @@ cuss scipy.special --since 2y --min-stars 50
 ```
 scipy.special — 400 files, 289 repos, pushed >= 2y
 
-symbol         files  repos  call  other  import
-softmax           43     41    72      3       2
-erf               33     33    63      1       9
-gamma             32     30   130      3       3
-logsumexp         24     22    92              3
-comb              18     17    44              1
+                             ------ kinds ------
+symbol         files  repos  call  import  other
+softmax           43     41    72       2      3
+erf               33     33    63       9      1
+gamma             32     30   130       3      3
+logsumexp         24     22    92       3
+comb              18     17    44       1
 
 20 of 125 used symbols shown (--top)
 549 public symbols unused (--unused)
 ```
 
 One column per usage kind, and only for the kinds that occur — `httpx` gets `subcls` and
-`annot` columns that `scipy.special` has no use for. `other` is the catch-all: mentioned,
-but not called, subclassed, annotated or decorated (`--json` spells it `reference`).
-Names are relative to the scope named in the header.
+`annot` columns that `scipy.special` has no use for. `other` comes last, being the
+catch-all: mentioned, but not called, subclassed, annotated or decorated (`--json` spells
+it `reference`). Names are relative to the scope named in the header.
 
 There is no total column, because it would be the row sum and nothing more.
 
