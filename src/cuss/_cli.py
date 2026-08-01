@@ -20,7 +20,6 @@ _LABELS = {
     Kind.SUBCLASS: "subcls",
     Kind.DECORATOR: "decor",
     Kind.ANNOTATION: "annot",
-    Kind.IMPORT: "import",
     Kind.REFERENCE: "other",
 }
 
