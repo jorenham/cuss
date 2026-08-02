@@ -37,6 +37,11 @@ classifiers = [
 requires-python = ">=3.14"
 dependencies = ["httpx>=0.28.1"]
 
+[project.urls]
+Homepage = "https://github.com/jorenham/cuss"
+Repository = "https://github.com/jorenham/cuss"
+Issues = "https://github.com/jorenham/cuss/issues"
+
 [project.scripts]
 cuss = "cuss:main"
 

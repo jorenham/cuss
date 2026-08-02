@@ -5,6 +5,7 @@ import json
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from importlib.metadata import version
 from typing import Any
 
 import httpx
@@ -50,6 +51,7 @@ def parse(argv: Sequence[str] | None) -> Options:
         _ = parser.add_argument(*names, **options)
 
     add("target", help="dotted module, symbol, distribution, or directory")
+    add("-V", "--version", action="version", version=f"%(prog)s {version('cuss')}")
     add("-n", "--max-files", type=int, default=500, help="corpus size (default: 500)")
     add("-t", "--top", type=int, default=40, help="rows to show (default: 40)")
     add("--min-stars", type=int, default=0, help="skip repositories below this")
