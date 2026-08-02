@@ -156,14 +156,11 @@ class GitHub:
     limiter: Limiter
     verbose: bool = False
 
-    async def search(self, query: str, pages: int = _PAGES) -> list[Hit]:
-        hits: list[Hit] = []
-        for page in range(1, min(pages, _PAGES) + 1):
-            items = await self._page(query, page)
-            hits += [hit for item in items if (hit := _hit(item)) is not None]
-            if len(items) < _PER_PAGE:
-                break
-        return hits
+    async def page(self, query: str, number: int) -> tuple[list[Hit], bool]:
+        """The hits on one page, and whether the query still has more to give."""
+        items = await self._page(query, number)
+        hits = [hit for item in items if (hit := _hit(item)) is not None]
+        return hits, len(items) == _PER_PAGE
 
     async def repos(self, names: Sequence[str]) -> dict[str, Repo]:
         found: dict[str, Repo] = {}
@@ -267,18 +264,44 @@ async def collect(
     limit: int,
     keep: Filter,
 ) -> list[Blob]:
-    """Search, enrich, filter, then download only the files that survive."""
+    """Search, enrich, filter, then download only the files that survive.
+
+    Each query is capped at an equal share. `import numpy` outruns
+    `from numpy import` forty to one, so without a cap whichever is asked first
+    fills the budget alone and the package gets described by one idiom.
+    """
+    share = ceil(limit / len(queries))
     seen: set[str] = set()
+    taken = [0] * len(queries)
     hits: list[Hit] = []
-    for query in (q + band for band in _BANDS for q in queries):
-        if len(hits) >= limit:
-            break
-        pages = ceil((limit - len(hits)) / _PER_PAGE) + 1
-        found = [h for h in await github.search(query, pages) if h.sha not in seen]
-        seen.update(h.sha for h in found)
-        repos = await github.repos(sorted({h.repo for h in found}))
-        hits += [h for h in found if (r := repos.get(h.repo)) is not None and keep(r)]
+    spent: set[str] = set()
+
+    for index, query, page in _rounds(queries):
+        if taken[index] >= share or query in spent:
+            continue
+        found, more = await github.page(query, page)
+        if not more:
+            spent.add(query)
+        fresh = [h for h in found if h.sha not in seen]
+        seen.update(h.sha for h in fresh)
+        repos = await github.repos(sorted({h.repo for h in fresh}))
+        good = [h for h in fresh if (r := repos.get(h.repo)) is not None and keep(r)]
+        room = good[: share - taken[index]]
+        taken[index] += len(room)
+        hits += room
     return await github.blobs(hits[:limit])
+
+
+def _rounds(queries: Sequence[str]) -> Iterator[tuple[int, str, int]]:
+    """Which query, what to ask, which page — interleaved, never one query deep.
+
+    >>> [*_rounds(("a", "b"))][:4]
+    [(0, 'a', 1), (1, 'b', 1), (0, 'a', 2), (1, 'b', 2)]
+    """
+    for band in _BANDS:
+        for page in range(1, _PAGES + 1):
+            for index, query in enumerate(queries):
+                yield index, query + band, page
 
 
 def queries(module: str) -> list[str]:
