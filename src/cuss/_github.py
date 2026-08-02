@@ -54,6 +54,13 @@ class Hit:
 
 
 @dataclass(frozen=True, slots=True)
+class Page:
+    hits: list[Hit]
+    total: int
+    more: bool
+
+
+@dataclass(frozen=True, slots=True)
 class Repo:
     name: str
     pushed: dt.datetime
@@ -156,11 +163,15 @@ class GitHub:
     limiter: Limiter
     verbose: bool = False
 
-    async def page(self, query: str, number: int) -> tuple[list[Hit], bool]:
-        """The hits on one page, and whether the query still has more to give."""
-        items = await self._page(query, number)
-        hits = [hit for item in items if (hit := _hit(item)) is not None]
-        return hits, len(items) == _PER_PAGE
+    async def page(self, query: str, number: int) -> Page:
+        """One page of hits, how many the query has in all, and whether more remain."""
+        payload = await self._payload(query, number)
+        items: list[dict[str, Any]] = payload.get("items", [])
+        return Page(
+            hits=[hit for item in items if (hit := _hit(item)) is not None],
+            total=payload.get("total_count", 0),
+            more=len(items) == _PER_PAGE,
+        )
 
     async def repos(self, names: Sequence[str]) -> dict[str, Repo]:
         found: dict[str, Repo] = {}
@@ -187,17 +198,17 @@ class GitHub:
         fetched = await asyncio.gather(*(self._blob(hit, gate) for hit in hits))
         return [blob for blob in fetched if blob is not None]
 
-    async def _page(self, query: str, page: int) -> list[dict[str, Any]]:
+    async def _payload(self, query: str, page: int) -> dict[str, Any]:
         key = f"{query}#{page}"
         if (cached := self.cache.get("search", key, _SEARCH_TTL)) is not None:
-            return json.loads(cached)["items"]
+            return json.loads(cached)
 
         response = await self._attempt(query, page)
         if response.status_code == _CAPPED:
-            return []
+            return {}
         _ = response.raise_for_status()
         self.cache.put("search", key, response.text)
-        return response.json()["items"]
+        return response.json()
 
     async def _attempt(self, query: str, page: int) -> httpx.Response:
         """The limiter only knows this process; GitHub counts every one of them."""
@@ -266,10 +277,10 @@ async def collect(
 ) -> list[Blob]:
     """Search, enrich, filter, then download only the files that survive.
 
-    Sources take turns, and none may exceed an equal share of the corpus, so the
-    idiom a package is conventionally imported with cannot be crowded out by a
-    rarer one: `import numpy` outruns `from numpy import` forty to one. A source
-    that runs dry hands its share to the others rather than stranding it.
+    Sources take turns, and each may fill the corpus only in proportion to how
+    common its idiom is: `import numpy` outruns `from numpy import` forty to one,
+    and the two turn out to be used for noticeably different parts of the API. A
+    source that runs dry hands its share to the others rather than stranding it.
     """
     sources = [_Source(query) for query in queries]
     seen: set[str] = set()
@@ -278,11 +289,12 @@ async def collect(
     for source, query, page in _rounds(sources):
         if len(hits) >= limit:
             break
-        share = _share(limit, sources)
+        share = _share(limit, source, sources)
         if not source.live or source.taken >= share:
             continue
-        found, source.live = await github.page(query, page)
-        fresh = [h for h in found if h.sha not in seen]
+        found = await github.page(query, page)
+        source.live, source.total = found.more, found.total
+        fresh = [h for h in found.hits if h.sha not in seen]
         seen.update(h.sha for h in fresh)
         repos = await github.repos(sorted({h.repo for h in fresh}))
         good = [h for h in fresh if (r := repos.get(h.repo)) is not None and keep(r)]
@@ -297,21 +309,23 @@ class _Source:
     """One query and how far it has got. Dead once it has returned everything it has."""
 
     query: str
+    total: int = 0
     taken: int = 0
     live: bool = True
 
 
-def _share(limit: int, sources: Sequence[_Source]) -> int:
-    """A live source's slice of the corpus; the ones that ran dry give theirs up.
+def _share(limit: int, source: _Source, sources: Sequence[_Source]) -> int:
+    """How much of the corpus a source may fill, in proportion to how common its
+    idiom is — but never less than one page, so no idiom becomes invisible and
+    the symbols peculiar to it are not mistaken for unused.
 
-    >>> a, b = _Source("a"), _Source("b")
-    >>> _share(500, [a, b])
-    250
-    >>> b.live = False
-    >>> _share(500, [a, b])
-    500
+    >>> rare, common = _Source("a", total=85_000), _Source("b", total=3_345_408)
+    >>> _share(500, common, [rare, common]), _share(500, rare, [rare, common])
+    (488, 100)
     """
-    return ceil(limit / max(sum(1 for source in sources if source.live), 1))
+    supply = sum(s.total for s in sources if s.live)
+    share = ceil(limit * source.total / supply) if supply else 0
+    return max(share, _PER_PAGE)
 
 
 def _rounds(sources: Sequence[_Source]) -> Iterator[tuple[_Source, str, int]]:

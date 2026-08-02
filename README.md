@@ -113,10 +113,15 @@ is spent per page, not per symbol. Age and popularity filtering happens afterwar
 repository metadata, which is where those qualifiers actually exist.
 
 Two queries find the corpus — `from numpy import` and `import numpy`, the second covering
-every alias, `import numpy as np` included. They are interleaved and each capped to an
-equal share of the budget, because they are not equally common: 3.3M results against 85k,
-forty to one. Left to run in order, the first would fill the corpus alone and numpy would
-be measured entirely on its rarest idiom.
+every alias, `import numpy as np` included. They take turns, and each fills the corpus in
+proportion to how common its idiom is: 3.3M results against 85k, forty to one. This
+matters more than it sounds. Splitting a numpy corpus by idiom and ranking each half
+separately, only 5 of the top 12 symbols are shared — `dot`, `empty`, `inf` and `ufunc`
+surface in `from numpy import` files, `concatenate`, `float32`, `linspace` and `sin` in
+`np.`-style ones. Weighting them equally would describe a population that does not exist.
+
+No source may fall below one page, though, so a genuinely rarer idiom still contributes
+and the symbols peculiar to it are not mistaken for unused.
 
 ## What gets counted
 

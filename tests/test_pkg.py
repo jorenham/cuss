@@ -9,6 +9,7 @@ from cuss._cli import _LABELS
 from cuss._github import (
     _BANDS,
     _PAGES,
+    _PER_PAGE,
     Filter,
     Repo,
     _retry_after,
@@ -164,14 +165,26 @@ def test_the_catch_all_kind_is_last() -> None:
     assert list(_LABELS)[-1] is Kind.VALUE
 
 
+def test_share_follows_how_common_each_idiom_is() -> None:
+    budget = 1_000
+    rare, common = _Source("rare", total=1_000), _Source("common", total=9_000)
+    both = [rare, common]
+    assert _share(budget, common, both) == budget * 9 // 10
+    assert _share(budget, rare, both) == budget // 10
+
+
+def test_share_never_drops_below_a_page() -> None:
+    rare, common = _Source("rare", total=1), _Source("common", total=10**9)
+    assert _share(500, rare, [rare, common]) == _PER_PAGE
+
+
 def test_a_source_that_runs_dry_hands_its_share_over() -> None:
-    budget = 300
-    sources = [_Source("a"), _Source("b"), _Source("c")]
-    assert _share(budget, sources) == budget // 3
-    sources[2].live = False
-    assert _share(budget, sources) == budget // 2
-    sources[1].live = False
-    assert _share(budget, sources) == budget
+    budget = 1_000
+    rare, common = _Source("rare", total=1_000), _Source("common", total=9_000)
+    both = [rare, common]
+    assert _share(budget, rare, both) == budget // 10
+    common.live = False
+    assert _share(budget, rare, both) == budget
 
 
 def test_rounds_interleaves_before_going_deep() -> None:
