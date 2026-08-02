@@ -6,7 +6,18 @@ import httpx
 import pytest
 
 from cuss._cli import _LABELS
-from cuss._github import Filter, Repo, _retry_after, since
+from cuss._github import (
+    _BANDS,
+    _PAGES,
+    _PER_PAGE,
+    Filter,
+    Repo,
+    _retry_after,
+    _rounds,
+    _share,
+    _Source,
+    since,
+)
 from cuss._pkg import read, resolve, symbols
 from cuss._usage import Kind
 
@@ -152,3 +163,27 @@ def test_every_kind_has_a_column_label() -> None:
 
 def test_the_catch_all_kind_is_last() -> None:
     assert list(_LABELS)[-1] is Kind.VALUE
+
+
+@pytest.fixture
+def lopsided() -> list[_Source]:
+    return [_Source("rare", total=1_000), _Source("common", total=9_000)]
+
+
+def test_share_never_drops_below_a_page(lopsided: list[_Source]) -> None:
+    lopsided[1].total = 10**9
+    assert _share(500, lopsided[0], lopsided) == _PER_PAGE
+
+
+def test_a_source_that_runs_dry_hands_its_share_over(lopsided: list[_Source]) -> None:
+    budget = 1_000
+    rare, common = lopsided
+    assert _share(budget, rare, lopsided) == budget // 10
+    common.live = False
+    assert _share(budget, rare, lopsided) == budget
+
+
+def test_rounds_covers_every_band_and_page() -> None:
+    turns = [*_rounds([_Source("a")])]
+    assert len(turns) == len(_BANDS) * _PAGES
+    assert turns[_PAGES][1].startswith("a size:")

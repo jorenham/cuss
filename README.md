@@ -112,6 +112,13 @@ So search runs a handful of queries to *find files*, and the AST *counts symbols
 is spent per page, not per symbol. Age and popularity filtering happens afterwards, over
 repository metadata, which is where those qualifiers actually exist.
 
+Two queries find the corpus — `from numpy import` and `import numpy`, the second covering
+every alias — and each fills it in proportion to how common its idiom is, 3.3M results
+against 85k. Rank the two halves of a numpy corpus separately and only 5 of the top 12
+symbols are shared, so weighting them equally would describe a population that does not
+exist. No source falls below one page, though, or the symbols peculiar to a rarer idiom
+would read as unused.
+
 ## What gets counted
 
 Every import form is resolved to a qualified name:

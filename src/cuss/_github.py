@@ -54,6 +54,13 @@ class Hit:
 
 
 @dataclass(frozen=True, slots=True)
+class Page:
+    hits: list[Hit]
+    total: int
+    more: bool
+
+
+@dataclass(frozen=True, slots=True)
 class Repo:
     name: str
     pushed: dt.datetime
@@ -156,14 +163,14 @@ class GitHub:
     limiter: Limiter
     verbose: bool = False
 
-    async def search(self, query: str, pages: int = _PAGES) -> list[Hit]:
-        hits: list[Hit] = []
-        for page in range(1, min(pages, _PAGES) + 1):
-            items = await self._page(query, page)
-            hits += [hit for item in items if (hit := _hit(item)) is not None]
-            if len(items) < _PER_PAGE:
-                break
-        return hits
+    async def page(self, query: str, number: int) -> Page:
+        payload = await self._payload(query, number)
+        items: list[dict[str, Any]] = payload.get("items", [])
+        return Page(
+            hits=[hit for item in items if (hit := _hit(item)) is not None],
+            total=payload.get("total_count", 0),
+            more=len(items) == _PER_PAGE,
+        )
 
     async def repos(self, names: Sequence[str]) -> dict[str, Repo]:
         found: dict[str, Repo] = {}
@@ -190,17 +197,17 @@ class GitHub:
         fetched = await asyncio.gather(*(self._blob(hit, gate) for hit in hits))
         return [blob for blob in fetched if blob is not None]
 
-    async def _page(self, query: str, page: int) -> list[dict[str, Any]]:
+    async def _payload(self, query: str, page: int) -> dict[str, Any]:
         key = f"{query}#{page}"
         if (cached := self.cache.get("search", key, _SEARCH_TTL)) is not None:
-            return json.loads(cached)["items"]
+            return json.loads(cached)
 
         response = await self._attempt(query, page)
         if response.status_code == _CAPPED:
-            return []
+            return {}
         _ = response.raise_for_status()
         self.cache.put("search", key, response.text)
-        return response.json()["items"]
+        return response.json()
 
     async def _attempt(self, query: str, page: int) -> httpx.Response:
         """The limiter only knows this process; GitHub counts every one of them."""
@@ -268,17 +275,61 @@ async def collect(
     keep: Filter,
 ) -> list[Blob]:
     """Search, enrich, filter, then download only the files that survive."""
+    sources = [_Source(query) for query in queries]
     seen: set[str] = set()
     hits: list[Hit] = []
-    for query in (q + band for band in _BANDS for q in queries):
+
+    for source, query, page in _rounds(sources):
         if len(hits) >= limit:
             break
-        pages = ceil((limit - len(hits)) / _PER_PAGE) + 1
-        found = [h for h in await github.search(query, pages) if h.sha not in seen]
-        seen.update(h.sha for h in found)
-        repos = await github.repos(sorted({h.repo for h in found}))
-        hits += [h for h in found if (r := repos.get(h.repo)) is not None and keep(r)]
+        share = _share(limit, source, sources)
+        if not source.live or source.taken >= share:
+            continue
+        found = await github.page(query, page)
+        source.live, source.total = found.more, found.total
+        fresh = [h for h in found.hits if h.sha not in seen]
+        seen.update(h.sha for h in fresh)
+        repos = await github.repos(sorted({h.repo for h in fresh}))
+        good = [h for h in fresh if (r := repos.get(h.repo)) is not None and keep(r)]
+        hits += source.take(good, share)
     return await github.blobs(hits[:limit])
+
+
+@dataclass(slots=True)
+class _Source:
+    query: str
+    total: int = 0
+    taken: int = 0
+    live: bool = True
+
+    def take(self, hits: Sequence[Hit], share: int) -> Sequence[Hit]:
+        room = hits[: share - self.taken]
+        self.taken += len(room)
+        return room
+
+
+def _share(limit: int, source: _Source, sources: Sequence[_Source]) -> int:
+    """A source's slice of the corpus, weighted by how common its idiom is.
+
+    >>> rare, common = _Source("a", total=85_000), _Source("b", total=3_345_408)
+    >>> _share(500, common, [rare, common]), _share(500, rare, [rare, common])
+    (488, 100)
+    """
+    supply = sum(s.total for s in sources if s.live)
+    share = ceil(limit * source.total / supply) if supply else 0
+    return max(share, _PER_PAGE)
+
+
+def _rounds(sources: Sequence[_Source]) -> Iterator[tuple[_Source, str, int]]:
+    """Page requests, interleaved so no source goes deep before another is tried.
+
+    >>> [(query, page) for _, query, page in _rounds([_Source("a"), _Source("b")])][:4]
+    [('a', 1), ('b', 1), ('a', 2), ('b', 2)]
+    """
+    for band in _BANDS:
+        for page in range(1, _PAGES + 1):
+            for source in sources:
+                yield source, source.query + band, page
 
 
 def queries(module: str) -> list[str]:
