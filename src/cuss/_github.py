@@ -164,7 +164,6 @@ class GitHub:
     verbose: bool = False
 
     async def page(self, query: str, number: int) -> Page:
-        """One page of hits, how many the query has in all, and whether more remain."""
         payload = await self._payload(query, number)
         items: list[dict[str, Any]] = payload.get("items", [])
         return Page(
@@ -275,13 +274,7 @@ async def collect(
     limit: int,
     keep: Filter,
 ) -> list[Blob]:
-    """Search, enrich, filter, then download only the files that survive.
-
-    Sources take turns, and each may fill the corpus only in proportion to how
-    common its idiom is: `import numpy` outruns `from numpy import` forty to one,
-    and the two turn out to be used for noticeably different parts of the API. A
-    source that runs dry hands its share to the others rather than stranding it.
-    """
+    """Search, enrich, filter, then download only the files that survive."""
     sources = [_Source(query) for query in queries]
     seen: set[str] = set()
     hits: list[Hit] = []
@@ -298,26 +291,25 @@ async def collect(
         seen.update(h.sha for h in fresh)
         repos = await github.repos(sorted({h.repo for h in fresh}))
         good = [h for h in fresh if (r := repos.get(h.repo)) is not None and keep(r)]
-        room = good[: share - source.taken]
-        source.taken += len(room)
-        hits += room
+        hits += source.take(good, share)
     return await github.blobs(hits[:limit])
 
 
 @dataclass(slots=True)
 class _Source:
-    """One query and how far it has got. Dead once it has returned everything it has."""
-
     query: str
     total: int = 0
     taken: int = 0
     live: bool = True
 
+    def take(self, hits: Sequence[Hit], share: int) -> Sequence[Hit]:
+        room = hits[: share - self.taken]
+        self.taken += len(room)
+        return room
+
 
 def _share(limit: int, source: _Source, sources: Sequence[_Source]) -> int:
-    """How much of the corpus a source may fill, in proportion to how common its
-    idiom is — but never less than one page, so no idiom becomes invisible and
-    the symbols peculiar to it are not mistaken for unused.
+    """A source's slice of the corpus, weighted by how common its idiom is.
 
     >>> rare, common = _Source("a", total=85_000), _Source("b", total=3_345_408)
     >>> _share(500, common, [rare, common]), _share(500, rare, [rare, common])
@@ -329,10 +321,7 @@ def _share(limit: int, source: _Source, sources: Sequence[_Source]) -> int:
 
 
 def _rounds(sources: Sequence[_Source]) -> Iterator[tuple[_Source, str, int]]:
-    """Turns: every source is asked for page 1 before any is asked for page 2.
-
-    A source that ran dry unbanded has nothing more to give, since every band is
-    a subset of what it already returned, so its bands are never asked for.
+    """Page requests, interleaved so no source goes deep before another is tried.
 
     >>> [(query, page) for _, query, page in _rounds([_Source("a"), _Source("b")])][:4]
     [('a', 1), ('b', 1), ('a', 2), ('b', 2)]

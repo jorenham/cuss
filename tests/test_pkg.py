@@ -165,31 +165,22 @@ def test_the_catch_all_kind_is_last() -> None:
     assert list(_LABELS)[-1] is Kind.VALUE
 
 
-def test_share_follows_how_common_each_idiom_is() -> None:
+@pytest.fixture
+def lopsided() -> list[_Source]:
+    return [_Source("rare", total=1_000), _Source("common", total=9_000)]
+
+
+def test_share_never_drops_below_a_page(lopsided: list[_Source]) -> None:
+    lopsided[1].total = 10**9
+    assert _share(500, lopsided[0], lopsided) == _PER_PAGE
+
+
+def test_a_source_that_runs_dry_hands_its_share_over(lopsided: list[_Source]) -> None:
     budget = 1_000
-    rare, common = _Source("rare", total=1_000), _Source("common", total=9_000)
-    both = [rare, common]
-    assert _share(budget, common, both) == budget * 9 // 10
-    assert _share(budget, rare, both) == budget // 10
-
-
-def test_share_never_drops_below_a_page() -> None:
-    rare, common = _Source("rare", total=1), _Source("common", total=10**9)
-    assert _share(500, rare, [rare, common]) == _PER_PAGE
-
-
-def test_a_source_that_runs_dry_hands_its_share_over() -> None:
-    budget = 1_000
-    rare, common = _Source("rare", total=1_000), _Source("common", total=9_000)
-    both = [rare, common]
-    assert _share(budget, rare, both) == budget // 10
+    rare, common = lopsided
+    assert _share(budget, rare, lopsided) == budget // 10
     common.live = False
-    assert _share(budget, rare, both) == budget
-
-
-def test_rounds_interleaves_before_going_deep() -> None:
-    turns = [(query, page) for _, query, page in _rounds([_Source("a"), _Source("b")])]
-    assert turns[:4] == [("a", 1), ("b", 1), ("a", 2), ("b", 2)]
+    assert _share(budget, rare, lopsided) == budget
 
 
 def test_rounds_covers_every_band_and_page() -> None:
