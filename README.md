@@ -13,6 +13,15 @@ Answers two questions:
 - Can I deprecate `X`?
 - Which symbols should I improve first?
 
+## Install
+
+```shell
+uvx cuss --help          # run it without installing
+uv tool install cuss     # or keep it on PATH
+```
+
+Needs `GITHUB_TOKEN`, `GH_TOKEN`, or an authenticated `gh`, since it searches code.
+
 ## Usage
 
 ```shell
@@ -68,8 +77,6 @@ cuss ./src/mypkg/_core.py      # whichever file is open
 Dotted targets are resolved from `sys.path`. Paths climb to the top-level package —
 a parent holding `__init__` means there is more package above — so pointing anywhere
 inside a checkout works, and the position within it becomes the scope.
-
-Needs `GITHUB_TOKEN`, `GH_TOKEN`, or an authenticated `gh`.
 
 ## How it works
 
