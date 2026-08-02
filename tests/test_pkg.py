@@ -6,7 +6,17 @@ import httpx
 import pytest
 
 from cuss._cli import _LABELS
-from cuss._github import Filter, Repo, _retry_after, since
+from cuss._github import (
+    _BANDS,
+    _PAGES,
+    Filter,
+    Repo,
+    _retry_after,
+    _rounds,
+    _share,
+    _Source,
+    since,
+)
 from cuss._pkg import read, resolve, symbols
 from cuss._usage import Kind
 
@@ -152,3 +162,24 @@ def test_every_kind_has_a_column_label() -> None:
 
 def test_the_catch_all_kind_is_last() -> None:
     assert list(_LABELS)[-1] is Kind.VALUE
+
+
+def test_a_source_that_runs_dry_hands_its_share_over() -> None:
+    budget = 300
+    sources = [_Source("a"), _Source("b"), _Source("c")]
+    assert _share(budget, sources) == budget // 3
+    sources[2].live = False
+    assert _share(budget, sources) == budget // 2
+    sources[1].live = False
+    assert _share(budget, sources) == budget
+
+
+def test_rounds_interleaves_before_going_deep() -> None:
+    turns = [(query, page) for _, query, page in _rounds([_Source("a"), _Source("b")])]
+    assert turns[:4] == [("a", 1), ("b", 1), ("a", 2), ("b", 2)]
+
+
+def test_rounds_covers_every_band_and_page() -> None:
+    turns = [*_rounds([_Source("a")])]
+    assert len(turns) == len(_BANDS) * _PAGES
+    assert turns[_PAGES][1].startswith("a size:")

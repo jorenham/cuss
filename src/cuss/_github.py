@@ -266,42 +266,67 @@ async def collect(
 ) -> list[Blob]:
     """Search, enrich, filter, then download only the files that survive.
 
-    Each query is capped at an equal share. `import numpy` outruns
-    `from numpy import` forty to one, so without a cap whichever is asked first
-    fills the budget alone and the package gets described by one idiom.
+    Sources take turns, and none may exceed an equal share of the corpus, so the
+    idiom a package is conventionally imported with cannot be crowded out by a
+    rarer one: `import numpy` outruns `from numpy import` forty to one. A source
+    that runs dry hands its share to the others rather than stranding it.
     """
-    share = ceil(limit / len(queries))
+    sources = [_Source(query) for query in queries]
     seen: set[str] = set()
-    taken = [0] * len(queries)
     hits: list[Hit] = []
-    spent: set[str] = set()
 
-    for index, query, page in _rounds(queries):
-        if taken[index] >= share or query in spent:
+    for source, query, page in _rounds(sources):
+        if len(hits) >= limit:
+            break
+        share = _share(limit, sources)
+        if not source.live or source.taken >= share:
             continue
-        found, more = await github.page(query, page)
-        if not more:
-            spent.add(query)
+        found, source.live = await github.page(query, page)
         fresh = [h for h in found if h.sha not in seen]
         seen.update(h.sha for h in fresh)
         repos = await github.repos(sorted({h.repo for h in fresh}))
         good = [h for h in fresh if (r := repos.get(h.repo)) is not None and keep(r)]
-        room = good[: share - taken[index]]
-        taken[index] += len(room)
+        room = good[: share - source.taken]
+        source.taken += len(room)
         hits += room
     return await github.blobs(hits[:limit])
 
 
-def _rounds(queries: Sequence[str]) -> Iterator[tuple[int, str, int]]:
-    """Which query, what to ask, which page — interleaved, never one query deep.
+@dataclass(slots=True)
+class _Source:
+    """One query and how far it has got. Dead once it has returned everything it has."""
 
-    >>> [*_rounds(("a", "b"))][:4]
-    [(0, 'a', 1), (1, 'b', 1), (0, 'a', 2), (1, 'b', 2)]
+    query: str
+    taken: int = 0
+    live: bool = True
+
+
+def _share(limit: int, sources: Sequence[_Source]) -> int:
+    """A live source's slice of the corpus; the ones that ran dry give theirs up.
+
+    >>> a, b = _Source("a"), _Source("b")
+    >>> _share(500, [a, b])
+    250
+    >>> b.live = False
+    >>> _share(500, [a, b])
+    500
+    """
+    return ceil(limit / max(sum(1 for source in sources if source.live), 1))
+
+
+def _rounds(sources: Sequence[_Source]) -> Iterator[tuple[_Source, str, int]]:
+    """Turns: every source is asked for page 1 before any is asked for page 2.
+
+    A source that ran dry unbanded has nothing more to give, since every band is
+    a subset of what it already returned, so its bands are never asked for.
+
+    >>> [(query, page) for _, query, page in _rounds([_Source("a"), _Source("b")])][:4]
+    [('a', 1), ('b', 1), ('a', 2), ('b', 2)]
     """
     for band in _BANDS:
         for page in range(1, _PAGES + 1):
-            for index, query in enumerate(queries):
-                yield index, query + band, page
+            for source in sources:
+                yield source, source.query + band, page
 
 
 def queries(module: str) -> list[str]:
