@@ -47,11 +47,11 @@ cuss = "cuss:main"
 
 [dependency-groups]
 dev = [
-  "basedpyright==1.39.9",
-  "dprint-py==0.55.2.0",
+  "basedpyright==1.39.10",
+  "dprint-py==0.56.1.0",
   "pyrefly==1.2.0",
   "pytest==9.1.1",
-  "ruff==0.16.2",
+  "ruff==0.16.4",
 ]
 
 # [based]pyright
